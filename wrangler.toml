@@ -1,8 +1,3 @@
-# Cloudflare Worker configuration file.
-# Think of this like a small settings file that tells Cloudflare:
-# - what the Worker is called
-# - which JavaScript file is the entry point
- 
-name = "captivate-aipm-course"         # CUSTOMIZE: based on your worker name in Step 1
+name = "captivate-aipm-course"
 main = "worker.js"
 compatibility_date = "2026-02-08"
