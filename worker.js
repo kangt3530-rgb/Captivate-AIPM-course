@@ -3,13 +3,14 @@ export default {
     const origin = request.headers.get("Origin") || "";
     const allowedOrigin = isAllowedOrigin(origin);
 
+    // Handle CORS preflight
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: corsHeaders(allowedOrigin) });
     }
 
-    // 1. Verify Secret
+    // Verify your Cloudflare Secret
     if (!env.GEMINI_API_KEY) {
-      return new Response(JSON.stringify({ error: "Secret 'GEMINI_API_KEY' not found in Cloudflare." }), {
+      return new Response(JSON.stringify({ error: "Cloudflare Secret GEMINI_API_KEY is missing." }), {
         status: 500, headers: { "Content-Type": "application/json", ...corsHeaders(allowedOrigin) }
       });
     }
@@ -18,10 +19,11 @@ export default {
       const body = await request.json();
       const { response_text, learning_objective, criteria } = body;
 
-      const systemPrompt = "You are a Senior VP of Product. Evaluate the PM's strategy for BookBuddy. Return ONLY valid JSON.";
-      const userPrompt = `Objective: ${learning_objective}\nCriteria: ${criteria.join(", ")}\nResponse: ${response_text}\n\nEvaluate and return JSON with keys: verdict (Correct, Not quite right, Incorrect), summary, criteria_feedback (array), and next_step.`;
+      // Define the VP persona and evaluation rules
+      const systemPrompt = "You are a Senior VP of Product. Evaluate the PM's strategy for 'BookBuddy'. Return ONLY valid JSON.";
+      const userPrompt = `Learning objective: ${learning_objective}\nEvaluation criteria: ${criteria.join(", ")}\nLearner response: ${response_text}\n\nTask: Evaluate the response and return JSON with keys: verdict (must be 'Correct', 'Not quite right', or 'Incorrect'), summary (2-3 sentences), criteria_feedback (array of objects with 'criterion', 'met', and 'comment'), and next_step.`;
 
-      // 2. Call Gemini
+      // Call Google Gemini 1.5 Flash
       const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${env.GEMINI_API_KEY}`;
 
       const resp = await fetch(geminiUrl, {
@@ -34,22 +36,21 @@ export default {
       });
 
       if (!resp.ok) {
-        const errorDetail = await resp.text();
-        // This will show the real error in your Captivate feedback box
-        return new Response(JSON.stringify({ error: "Gemini Error", detail: errorDetail }), {
+        const errorText = await resp.text();
+        return new Response(JSON.stringify({ error: "Gemini API Refused Request", detail: errorText }), {
           status: 502, headers: { "Content-Type": "application/json", ...corsHeaders(allowedOrigin) }
         });
       }
 
       const data = await resp.json();
-      const jsonText = data.candidates[0].content.parts[0].text;
+      const jsonResponse = data.candidates[0].content.parts[0].text;
       
-      return new Response(jsonText, {
+      return new Response(jsonResponse, {
         status: 200, headers: { "Content-Type": "application/json", ...corsHeaders(allowedOrigin) }
       });
 
     } catch (err) {
-      return new Response(JSON.stringify({ error: "Worker Crash", message: err.message }), {
+      return new Response(JSON.stringify({ error: "Worker Internal Error", message: err.message }), {
         status: 500, headers: { "Content-Type": "application/json", ...corsHeaders(allowedOrigin) }
       });
     }
@@ -57,7 +58,7 @@ export default {
 };
 
 function isAllowedOrigin(origin) {
-  // Matches your GitHub domain
+  // Allow your GitHub domain and local testing
   if (!origin || /^http:\/\/localhost:\d+$/.test(origin) || origin === "https://kangt3530-rgb.github.io") return origin;
   return null;
 }
