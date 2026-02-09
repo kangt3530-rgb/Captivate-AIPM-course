@@ -3,14 +3,13 @@ export default {
     const origin = request.headers.get("Origin") || "";
     const allowedOrigin = isAllowedOrigin(origin);
 
-    // Handle CORS preflight
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: corsHeaders(allowedOrigin) });
     }
 
-    // Verify your Cloudflare Secret
+    // 1. 检查 Secret
     if (!env.GEMINI_API_KEY) {
-      return new Response(JSON.stringify({ error: "Cloudflare Secret GEMINI_API_KEY is missing." }), {
+      return new Response(JSON.stringify({ error: "Secret 'GEMINI_API_KEY' is missing in Cloudflare!" }), {
         status: 500, headers: { "Content-Type": "application/json", ...corsHeaders(allowedOrigin) }
       });
     }
@@ -19,11 +18,10 @@ export default {
       const body = await request.json();
       const { response_text, learning_objective, criteria } = body;
 
-      // Define the VP persona and evaluation rules
-      const systemPrompt = "You are a Senior VP of Product. Evaluate the PM's strategy for 'BookBuddy'. Return ONLY valid JSON.";
-      const userPrompt = `Learning objective: ${learning_objective}\nEvaluation criteria: ${criteria.join(", ")}\nLearner response: ${response_text}\n\nTask: Evaluate the response and return JSON with keys: verdict (must be 'Correct', 'Not quite right', or 'Incorrect'), summary (2-3 sentences), criteria_feedback (array of objects with 'criterion', 'met', and 'comment'), and next_step.`;
+      const systemPrompt = "You are a Senior VP of Product. Evaluate the PM's strategy for BookBuddy. Return ONLY valid JSON.";
+      const userPrompt = `Learning objective: ${learning_objective}\nCriteria: ${criteria.join(", ")}\nLearner response: ${response_text}\n\nTask: Evaluate and return JSON with keys: verdict (Correct, Not quite right, or Incorrect), summary, criteria_feedback (array), and next_step.`;
 
-      // Call Google Gemini 1.5 Flash
+      // 2. 调用 Gemini 1.5 Flash
       const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${env.GEMINI_API_KEY}`;
 
       const resp = await fetch(geminiUrl, {
@@ -35,17 +33,18 @@ export default {
         })
       });
 
+      // 3. 捕获 Google 的具体报错
       if (!resp.ok) {
-        const errorText = await resp.text();
-        return new Response(JSON.stringify({ error: "Gemini API Refused Request", detail: errorText }), {
+        const errorDetail = await resp.text();
+        return new Response(JSON.stringify({ error: "Gemini API Refused Request", detail: errorDetail }), {
           status: 502, headers: { "Content-Type": "application/json", ...corsHeaders(allowedOrigin) }
         });
       }
 
       const data = await resp.json();
-      const jsonResponse = data.candidates[0].content.parts[0].text;
+      const jsonResponseText = data.candidates[0].content.parts[0].text;
       
-      return new Response(jsonResponse, {
+      return new Response(jsonResponseText, {
         status: 200, headers: { "Content-Type": "application/json", ...corsHeaders(allowedOrigin) }
       });
 
@@ -58,7 +57,7 @@ export default {
 };
 
 function isAllowedOrigin(origin) {
-  // Allow your GitHub domain and local testing
+  // 允许本地测试、Captivate 预览和你的 GitHub 域名
   if (!origin || /^http:\/\/localhost:\d+$/.test(origin) || origin === "https://kangt3530-rgb.github.io") return origin;
   return null;
 }
